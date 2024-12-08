@@ -6,7 +6,7 @@ import os
 from dotenv import load_dotenv
 import logging
 import requests
-from openai import OpenAI
+import openai
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -18,14 +18,11 @@ OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 
 app = Flask(__name__)
 CORS(app)
-client = OpenAI(
-    api_key=OPENAI_API_KEY,
-    base_url="https://api.openai.com/v1"
-)
+openai.api_key = OPENAI_API_KEY
 
 def generate_key_takeaway(title, summary):
     try:
-        response = client.chat.completions.create(
+        response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": "You are a helpful assistant that generates one-line key takeaways from news articles. Keep it brief and focused on the main point."},
@@ -34,7 +31,7 @@ def generate_key_takeaway(title, summary):
             max_tokens=60,
             temperature=0.7
         )
-        return response.choices[0].message.content.strip()
+        return response['choices'][0]['message']['content'].strip()
     except Exception as e:
         logger.error(f"Error generating takeaway: {str(e)}")
         return None
@@ -136,7 +133,7 @@ def ask_about_article():
         return jsonify({"error": "Missing required fields"}), 400
     
     try:
-        response = client.chat.completions.create(
+        response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": "You are a helpful assistant that answers questions about news articles. Keep responses concise and informative."},
@@ -151,7 +148,7 @@ Please answer this question about the article."""}
             max_tokens=150,
             temperature=0.7
         )
-        answer = response.choices[0].message.content.strip()
+        answer = response['choices'][0]['message']['content'].strip()
         return jsonify({"answer": answer})
     except Exception as e:
         logger.error(f"Error generating answer: {str(e)}")
