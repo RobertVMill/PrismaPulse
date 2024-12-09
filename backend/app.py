@@ -1,5 +1,6 @@
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, session
 from flask_cors import CORS
+from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 import feedparser
 from datetime import datetime
 import os
@@ -7,6 +8,7 @@ from dotenv import load_dotenv
 import logging
 import requests
 from openai import OpenAI
+from models import User, users
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -17,8 +19,65 @@ NEWS_API_KEY = os.getenv('NEWS_API_KEY')
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 
 app = Flask(__name__)
-CORS(app)
+app.secret_key = os.getenv('FLASK_SECRET_KEY', 'dev')  # Change this in production!
+CORS(app, supports_credentials=True)
 client = OpenAI(api_key=OPENAI_API_KEY)
+
+# Initialize Flask-Login
+login_manager = LoginManager()
+login_manager.init_app(app)
+
+@login_manager.user_loader
+def load_user(user_id):
+    return users.get(user_id)
+
+@app.route('/api/register', methods=['POST'])
+def register():
+    data = request.json
+    username = data.get('username')
+    password = data.get('password')
+    
+    if not username or not password:
+        return jsonify({"error": "Missing username or password"}), 400
+    
+    if username in users:
+        return jsonify({"error": "Username already exists"}), 400
+    
+    user = User.create(username, password)
+    users[username] = user
+    
+    login_user(user)
+    return jsonify({"message": "Registration successful", "username": username})
+
+@app.route('/api/login', methods=['POST'])
+def login():
+    data = request.json
+    username = data.get('username')
+    password = data.get('password')
+    
+    if not username or not password:
+        return jsonify({"error": "Missing username or password"}), 400
+    
+    user = users.get(username)
+    if user and user.check_password(password):
+        login_user(user)
+        return jsonify({"message": "Login successful", "username": username})
+    
+    return jsonify({"error": "Invalid username or password"}), 401
+
+@app.route('/api/logout', methods=['POST'])
+@login_required
+def logout():
+    logout_user()
+    return jsonify({"message": "Logout successful"})
+
+@app.route('/api/user', methods=['GET'])
+@login_required
+def get_user():
+    return jsonify({
+        "username": current_user.username,
+        "isAuthenticated": True
+    })
 
 def generate_key_takeaway(title, summary):
     try:
@@ -104,6 +163,7 @@ def health_check():
     return jsonify({"status": "healthy"})
 
 @app.route('/api/news')
+@login_required
 def get_news():
     logger.info("News endpoint called")
     source = request.args.get('source', 'all')
@@ -123,6 +183,7 @@ def get_news():
     return jsonify(articles)
 
 @app.route('/api/ask', methods=['POST'])
+@login_required
 def ask_about_article():
     data = request.json
     question = data.get('question')
