@@ -1,5 +1,5 @@
 {
-  "name": "frontend",
+  "name": "signal7",
   "version": "1.0.0",
   "private": true,
   "scripts": {
@@ -9,6 +9,11 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.47.3",
+    "@tiptap/extension-placeholder": "^2.10.3",
+    "@tiptap/pm": "^2.10.3",
+    "@tiptap/react": "^2.10.3",
+    "@tiptap/starter-kit": "^2.10.3",
     "@types/node": "^20.0.0",
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",

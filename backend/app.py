@@ -1,221 +1,193 @@
-from flask import Flask, jsonify, request, session
+from flask import Flask, request, jsonify
 from flask_cors import CORS
-from flask_login import LoginManager, login_user, logout_user, login_required, current_user
-import feedparser
-from datetime import datetime
 import os
 from dotenv import load_dotenv
+from openai import OpenAI
 import logging
 import requests
-from openai import OpenAI
-from models import User, users
+from datetime import datetime, timedelta
+from models import BigTechUpdate
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Load environment variables
 load_dotenv()
-NEWS_API_KEY = os.getenv('NEWS_API_KEY')
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
+NEWS_API_KEY = os.getenv('NEWS_API_KEY')
 
-app = Flask(__name__)
-app.secret_key = os.getenv('FLASK_SECRET_KEY', 'dev')  # Change this in production!
-CORS(app, supports_credentials=True)
+if not OPENAI_API_KEY:
+    raise ValueError("Missing OpenAI API key. Please set OPENAI_API_KEY in .env file")
+
+if not NEWS_API_KEY:
+    raise ValueError("Missing News API key. Please set NEWS_API_KEY in .env file")
+
+# Initialize OpenAI client
 client = OpenAI(api_key=OPENAI_API_KEY)
 
-# Initialize Flask-Login
-login_manager = LoginManager()
-login_manager.init_app(app)
+# Initialize Flask
+app = Flask(__name__)
 
-@login_manager.user_loader
-def load_user(user_id):
-    return users.get(user_id)
+# Configure CORS with credentials support
+CORS(app, 
+     resources={
+         r"/*": {
+             "origins": ["http://localhost:3000"],
+             "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+             "allow_headers": ["Content-Type", "Authorization"],
+             "supports_credentials": True
+         }
+     })
 
-@app.route('/api/register', methods=['POST'])
-def register():
-    data = request.json
-    username = data.get('username')
-    password = data.get('password')
-    
-    if not username or not password:
-        return jsonify({"error": "Missing username or password"}), 400
-    
-    if username in users:
-        return jsonify({"error": "Username already exists"}), 400
-    
-    user = User.create(username, password)
-    users[username] = user
-    
-    login_user(user)
-    return jsonify({"message": "Registration successful", "username": username})
+# Enable debug mode and auto-reloading
+app.debug = True
 
-@app.route('/api/login', methods=['POST'])
-def login():
-    data = request.json
-    username = data.get('username')
-    password = data.get('password')
-    
-    if not username or not password:
-        return jsonify({"error": "Missing username or password"}), 400
-    
-    user = users.get(username)
-    if user and user.check_password(password):
-        login_user(user)
-        return jsonify({"message": "Login successful", "username": username})
-    
-    return jsonify({"error": "Invalid username or password"}), 401
-
-@app.route('/api/logout', methods=['POST'])
-@login_required
-def logout():
-    logout_user()
-    return jsonify({"message": "Logout successful"})
-
-@app.route('/api/user', methods=['GET'])
-@login_required
-def get_user():
+@app.route('/api/test', methods=['GET'])
+def test_endpoint():
     return jsonify({
-        "username": current_user.username,
-        "isAuthenticated": True
+        "message": "API connection successful!",
+        "status": "ok"
     })
 
-def generate_key_takeaway(title, summary):
+@app.route('/api/news')
+def get_news():
     try:
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "You are a helpful assistant that generates one-line key takeaways from news articles. Keep it brief and focused on the main point."},
-                {"role": "user", "content": f"Title: {title}\n\nSummary: {summary}\n\nProvide a one-line key takeaway from this article."}
-            ],
-            max_tokens=60,
-            temperature=0.7
-        )
-        return response.choices[0].message.content.strip()
-    except Exception as e:
-        logger.error(f"Error generating takeaway: {str(e)}")
-        return None
-
-def fetch_tech_news_rss():
-    logger.info("Fetching news from TechCrunch RSS feed...")
-    try:
-        feed = feedparser.parse('https://techcrunch.com/feed/')
-        if feed.bozo:
-            logger.error(f"Error parsing RSS feed: {feed.bozo_exception}")
-            return []
-            
-        articles = []
-        logger.info(f"Found {len(feed.entries)} articles")
+        logger.info("Fetching news from NewsAPI...")
         
-        for entry in feed.entries[:10]:
-            takeaway = generate_key_takeaway(entry.title, entry.summary)
-            article = {
-                'title': entry.title,
-                'link': entry.link,
-                'published': entry.published,
-                'summary': entry.summary,
-                'source': 'TechCrunch RSS',
-                'key_takeaway': takeaway
-            }
-            articles.append(article)
-        
-        logger.info(f"Returning {len(articles)} RSS articles")
-        return articles
-    except Exception as e:
-        logger.error(f"Error fetching RSS news: {str(e)}")
-        return []
-
-def fetch_news_api():
-    logger.info("Fetching news from News API...")
-    try:
-        url = 'https://newsapi.org/v2/top-headlines'
+        # Get news from NewsAPI - using v2/everything for more comprehensive results
+        url = 'https://newsapi.org/v2/everything'
         params = {
             'apiKey': NEWS_API_KEY,
-            'category': 'technology',
+            'q': 'technology OR artificial intelligence OR startup OR programming',  # Search terms
             'language': 'en',
-            'pageSize': 10
+            'sortBy': 'publishedAt',
+            'pageSize': 20,
+            'domains': 'techcrunch.com,theverge.com,wired.com,arstechnica.com'  # Reliable tech sources
         }
+        
+        logger.info(f"Making request to NewsAPI with params: {params}")
         response = requests.get(url, params=params)
-        response.raise_for_status()
-        data = response.json()
+        logger.info(f"NewsAPI response status: {response.status_code}")
         
-        articles = []
-        for item in data.get('articles', []):
-            takeaway = generate_key_takeaway(item.get('title'), item.get('description'))
-            article = {
-                'title': item.get('title'),
-                'link': item.get('url'),
-                'published': item.get('publishedAt'),
-                'summary': item.get('description'),
-                'source': f"News API - {item.get('source', {}).get('name', 'Unknown')}",
-                'key_takeaway': takeaway
-            }
-            articles.append(article)
+        if response.status_code != 200:
+            error_message = f"NewsAPI error: {response.status_code}"
+            logger.error(error_message)
+            if response.status_code == 401:
+                error_message = "Invalid News API key. Please check your API key configuration."
+            elif response.status_code == 429:
+                error_message = "Too many requests to News API. Please try again later."
+            return jsonify({"error": error_message}), 500
             
-        logger.info(f"Returning {len(articles)} News API articles")
-        return articles
-    except Exception as e:
-        logger.error(f"Error fetching News API: {str(e)}")
-        return []
-
-@app.route('/api/health')
-def health_check():
-    logger.info("Health check endpoint called")
-    return jsonify({"status": "healthy"})
-
-@app.route('/api/news')
-@login_required
-def get_news():
-    logger.info("News endpoint called")
-    source = request.args.get('source', 'all')
-    
-    if source == 'rss':
-        articles = fetch_tech_news_rss()
-    elif source == 'newsapi':
-        articles = fetch_news_api()
-    else:
-        # Fetch from both sources
-        articles = fetch_tech_news_rss() + fetch_news_api()
-    
-    if not articles:
-        logger.warning("No articles fetched")
-        return jsonify({"error": "Failed to fetch articles"}), 500
+        data = response.json()
+        logger.info(f"Received {len(data.get('articles', []))} articles from NewsAPI")
         
-    return jsonify(articles)
-
-@app.route('/api/ask', methods=['POST'])
-@login_required
-def ask_about_article():
-    data = request.json
-    question = data.get('question')
-    article_title = data.get('title')
-    article_summary = data.get('summary')
-    
-    if not all([question, article_title, article_summary]):
-        return jsonify({"error": "Missing required fields"}), 400
-    
-    try:
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "You are a helpful assistant that answers questions about news articles. Keep responses concise and informative."},
-                {"role": "user", "content": f"""
-Article Title: {article_title}
-Article Summary: {article_summary}
-
-Question: {question}
-
-Please answer this question about the article."""}
-            ],
-            max_tokens=150,
-            temperature=0.7
-        )
-        answer = response.choices[0].message.content.strip()
-        return jsonify({"answer": answer})
+        if 'status' in data and data['status'] != 'ok':
+            error_message = data.get('message', 'Unknown error from NewsAPI')
+            logger.error(f"NewsAPI returned error: {error_message}")
+            return jsonify({"error": error_message}), 500
+        
+        # Transform the articles to match our expected format
+        articles = []
+        for article in data.get('articles', []):
+            try:
+                # Skip articles with missing required fields
+                if not article.get('title') or not article.get('url'):
+                    continue
+                    
+                # Safely get text fields with fallbacks
+                title = article.get('title', '').lower() if article.get('title') else ''
+                description = article.get('description', '').lower() if article.get('description') else ''
+                content = title + ' ' + description
+                
+                # Simple categorization logic
+                category = 'Other Tech'
+                if any(word in content for word in ['ai', 'machine learning', 'artificial intelligence', 'gpt', 'openai']):
+                    category = 'AI & Machine Learning'
+                elif any(word in content for word in ['startup', 'funding', 'business', 'venture', 'acquisition']):
+                    category = 'Startups & Business'
+                elif any(word in content for word in ['security', 'hack', 'breach', 'cyber', 'privacy']):
+                    category = 'Cybersecurity'
+                elif any(word in content for word in ['app', 'ios', 'android', 'mobile']):
+                    category = 'Mobile & Apps'
+                elif any(word in content for word in ['cloud', 'web', 'api', 'aws', 'azure']):
+                    category = 'Web & Cloud'
+                
+                articles.append({
+                    'title': article.get('title', 'Untitled Article'),
+                    'link': article.get('url', '#'),
+                    'published': article.get('publishedAt', ''),
+                    'summary': article.get('description') or 'No description available',
+                    'full_content': article.get('content') or article.get('description') or 'No content available',
+                    'source': article.get('source', {}).get('name', 'Unknown Source'),
+                    'category': category
+                })
+            except Exception as article_error:
+                logger.error(f"Error processing article: {str(article_error)}")
+                continue
+        
+        if not articles:
+            logger.warning("No articles were successfully processed")
+            return jsonify([{
+                'title': 'No articles available',
+                'link': '#',
+                'published': '',
+                'summary': 'Unable to fetch articles at this time. Please try again later.',
+                'full_content': '',
+                'source': 'System',
+                'category': 'Other Tech'
+            }])
+        
+        logger.info(f"Successfully processed and returning {len(articles)} articles")
+        return jsonify(articles)
+        
+    except requests.exceptions.RequestException as e:
+        error_message = f"Network error while fetching news: {str(e)}"
+        logger.error(error_message)
+        return jsonify({"error": error_message}), 500
     except Exception as e:
-        logger.error(f"Error generating answer: {str(e)}")
-        return jsonify({"error": "Failed to generate answer"}), 500
+        error_message = f"Error fetching news: {str(e)}"
+        logger.error(error_message, exc_info=True)
+        return jsonify({"error": error_message}), 500
+
+@app.route('/api/generate-article', methods=['POST'])
+def generate_article():
+    try:
+        data = request.json
+        logger.info(f"Received request with data: {data}")
+        
+        # Simple validation
+        if not data or not data.get('topic'):
+            return jsonify({"error": "Missing topic"}), 400
+
+        logger.info("Making request to OpenAI API...")
+        # Generate article using OpenAI
+        completion = client.chat.completions.create(
+            model="gpt-4",
+            messages=[
+                {"role": "system", "content": "You are a helpful article writer."},
+                {"role": "user", "content": f"Write a short article about: {data['topic']}"}
+            ]
+        )
+        logger.info("Received response from OpenAI")
+
+        return jsonify({
+            "article": completion.choices[0].message.content,
+            "status": "success"
+        })
+
+    except Exception as e:
+        logger.error(f"Error in generate_article: {str(e)}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/big-tech-matrix', methods=['GET'])
+def get_big_tech_matrix():
+    try:
+        matrix = BigTechUpdate.get_company_matrix()
+        return jsonify(matrix)
+    except Exception as e:
+        logger.error(f"Error fetching big tech matrix: {str(e)}")
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
-    port = int(os.getenv('PORT', 8000))
-    logger.info(f"Starting server on port {port}")
-    app.run(host='0.0.0.0', port=port)
+    app.run(port=8000, debug=True)

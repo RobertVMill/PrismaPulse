@@ -1,4 +1,4 @@
-# PrismaPulse
+# Signal7
 
 An AI-powered tech news research assistant that helps gather, analyze, and distill information for better decision-making.
 

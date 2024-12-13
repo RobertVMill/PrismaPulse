@@ -1,68 +1,99 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
+import { supabase } from '@/lib/supabase';
+import { User } from '@supabase/supabase-js';
 
 interface AuthContextType {
-  user: { username: string } | null;
+  user: User | null;
   isLoading: boolean;
-  logout: () => Promise<void>;
-  checkAuth: () => Promise<void>;
+  signIn: () => Promise<void>;
+  signOut: () => Promise<void>;
+  signInWithEmail: (email: string, password: string) => Promise<{ error: Error | null }>;
+  signUpWithEmail: (email: string, password: string) => Promise<{ error: Error | null }>;
+  signInWithGithub: () => Promise<void>;
+  signInWithGoogle: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({
   user: null,
   isLoading: true,
-  logout: async () => {},
-  checkAuth: async () => {},
+  signIn: async () => {},
+  signOut: async () => {},
+  signInWithEmail: async () => ({ error: null }),
+  signUpWithEmail: async () => ({ error: null }),
+  signInWithGithub: async () => {},
+  signInWithGoogle: async () => {},
 });
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<{ username: string } | null>(null);
+export const useAuth = () => useContext(AuthContext);
+
+interface AuthProviderProps {
+  children: ReactNode;
+}
+
+export function AuthProvider({ children }: AuthProviderProps) {
+  const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
 
-  const checkAuth = async () => {
-    try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/user`, {
-        credentials: 'include',
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setUser({ username: data.username });
-      } else {
-        setUser(null);
-      }
-    } catch (error) {
-      setUser(null);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const logout = async () => {
-    try {
-      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/logout`, {
-        method: 'POST',
-        credentials: 'include',
-      });
-      setUser(null);
-      router.push('/login');
-    } catch (error) {
-      console.error('Logout error:', error);
-    }
-  };
-
   useEffect(() => {
-    checkAuth();
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+      setIsLoading(false);
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
+  const value = {
+    user,
+    isLoading,
+    signIn: async () => {
+      // Implement your sign in logic
+    },
+    signOut: async () => {
+      await supabase.auth.signOut();
+      router.push('/login');
+    },
+    signInWithEmail: async (email: string, password: string) => {
+      try {
+        const { error } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+        return { error };
+      } catch (error) {
+        return { error: error as Error };
+      }
+    },
+    signUpWithEmail: async (email: string, password: string) => {
+      try {
+        const { error } = await supabase.auth.signUp({
+          email,
+          password,
+        });
+        return { error };
+      } catch (error) {
+        return { error: error as Error };
+      }
+    },
+    signInWithGithub: async () => {
+      await supabase.auth.signInWithOAuth({
+        provider: 'github',
+      });
+    },
+    signInWithGoogle: async () => {
+      await supabase.auth.signInWithOAuth({
+        provider: 'google',
+      });
+    },
+  };
+
   return (
-    <AuthContext.Provider value={{ user, isLoading, logout, checkAuth }}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );
 }
-
-export const useAuth = () => useContext(AuthContext);

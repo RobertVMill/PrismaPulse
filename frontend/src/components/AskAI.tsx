@@ -1,18 +1,22 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 
 interface AskAIProps {
   title: string;
   summary: string;
+  fullContent?: string | null;
   onClose: () => void;
 }
 
-export default function AskAI({ title, summary, onClose }: AskAIProps) {
+export default function AskAI({ title, summary, fullContent, onClose }: AskAIProps) {
   const [question, setQuestion] = useState('');
   const [answer, setAnswer] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showContext, setShowContext] = useState(false);
+  const router = useRouter();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -21,17 +25,24 @@ export default function AskAI({ title, summary, onClose }: AskAIProps) {
     setLoading(true);
     setError(null);
     try {
+      console.log('Sending to AI:', { title, fullContent }); // Debug log
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/ask`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
         body: JSON.stringify({
           question,
           title,
-          summary,
+          full_content: fullContent || summary
         }),
       });
+
+      if (response.status === 401) {
+        router.push('/login');
+        return;
+      }
 
       if (!response.ok) {
         throw new Error('Failed to get answer');
@@ -48,7 +59,7 @@ export default function AskAI({ title, summary, onClose }: AskAIProps) {
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-      <div className="bg-gray-800 rounded-lg p-6 max-w-lg w-full">
+      <div className="bg-gray-800 rounded-lg p-6 max-w-3xl w-full max-h-[90vh] overflow-y-auto">
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-lg font-semibold">Ask AI about this article</h3>
           <button
@@ -58,6 +69,33 @@ export default function AskAI({ title, summary, onClose }: AskAIProps) {
             ×
           </button>
         </div>
+
+        <div className="flex justify-between items-center mb-4">
+          <h4 className="text-md text-gray-300">{title}</h4>
+          <button
+            onClick={() => setShowContext(!showContext)}
+            className="text-sm text-blue-400 hover:text-blue-300"
+          >
+            {showContext ? 'Hide Context' : 'Show Context'}
+          </button>
+        </div>
+
+        {showContext && (
+          <div className="mb-6 p-4 bg-gray-700/50 rounded-lg text-sm">
+            {fullContent ? (
+              <div>
+                <h5 className="text-gray-300 font-semibold mb-2">Full Article:</h5>
+                <p className="text-gray-400 whitespace-pre-line">{fullContent}</p>
+              </div>
+            ) : (
+              <div>
+                <h5 className="text-gray-300 font-semibold mb-2">Summary:</h5>
+                <p className="text-gray-400">{summary}</p>
+                <p className="text-yellow-400 mt-2 text-xs">Note: Full article content is not available. Using summary instead.</p>
+              </div>
+            )}
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
