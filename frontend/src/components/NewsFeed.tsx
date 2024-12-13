@@ -29,14 +29,22 @@ export default function NewsFeed() {
   useEffect(() => {
     const fetchArticles = async () => {
       try {
+        console.log('Fetching articles from:', process.env.NEXT_PUBLIC_API_URL);
         const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/news`);
         if (!response.ok) {
-          throw new Error('Failed to fetch articles');
+          const errorText = await response.text();
+          console.error('API Error:', {
+            status: response.status,
+            statusText: response.statusText,
+            body: errorText
+          });
+          throw new Error(`Failed to fetch articles: ${response.status} ${response.statusText}`);
         }
         const data = await response.json();
         setArticles(data);
       } catch (error) {
-        setError('Failed to fetch articles');
+        console.error('Error details:', error);
+        setError('Failed to fetch articles. Please try again later.');
       } finally {
         setLoading(false);
       }
