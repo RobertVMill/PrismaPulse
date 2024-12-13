@@ -39,13 +39,14 @@ except Exception as e:
 # Initialize Flask
 app = Flask(__name__)
 
-# Configure CORS
+# Configure CORS with more permissive settings
+app.config['CORS_HEADERS'] = 'Content-Type'
 CORS(app, 
      resources={
          r"/*": {
-             "origins": "*",  # Allow all origins in development
+             "origins": ["http://localhost:3000", "https://prisma-pulse.vercel.app", "https://signal7.vercel.app"],
              "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-             "allow_headers": ["Content-Type", "Authorization"],
+             "allow_headers": ["Content-Type", "Authorization", "Access-Control-Allow-Credentials"],
              "expose_headers": ["Content-Type", "Authorization"],
              "supports_credentials": True,
              "max_age": 600
@@ -54,21 +55,16 @@ CORS(app,
 
 @app.after_request
 def after_request(response):
-    # Handle preflight requests
-    if request.method == 'OPTIONS':
-        response = make_response()
+    origin = request.headers.get('Origin')
+    if origin in ["http://localhost:3000", "https://prisma-pulse.vercel.app", "https://signal7.vercel.app"]:
+        response.headers.add('Access-Control-Allow-Origin', origin)
         response.headers.add('Access-Control-Allow-Credentials', 'true')
         response.headers.add('Access-Control-Allow-Headers', 'Content-Type, Authorization')
         response.headers.add('Access-Control-Allow-Methods', 'GET, PUT, POST, DELETE, OPTIONS')
         response.headers.add('Access-Control-Max-Age', '600')
-    
-    # Allow requests from any origin
-    origin = request.headers.get('Origin')
-    if origin:
-        response.headers.add('Access-Control-Allow-Origin', origin)
-    else:
-        response.headers.add('Access-Control-Allow-Origin', '*')
-    
+        
+        if request.method == 'OPTIONS':
+            return response
     return response
 
 # Enable debug mode and auto-reloading
@@ -76,9 +72,11 @@ app.debug = True
 
 @app.route('/')
 def home():
+    logger.info("Home endpoint called")
     return jsonify({
         "status": "ok",
-        "message": "Signal7 API is running"
+        "message": "Signal7 API is running",
+        "version": "1.0.0"
     })
 
 @app.route('/api/test', methods=['GET'])
@@ -86,7 +84,8 @@ def test_endpoint():
     logger.info("Test endpoint called")
     return jsonify({
         "message": "API connection successful!",
-        "status": "ok"
+        "status": "ok",
+        "cors": "enabled"
     })
 
 @app.route('/api/news')
