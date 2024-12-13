@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
+import { supabase } from '@/lib/supabase';
 import BookmarkButton from '@/components/BookmarkButton';
 
 interface Bookmark {
@@ -15,35 +15,37 @@ interface Bookmark {
 }
 
 export default function BookmarksPage() {
+  const { user } = useAuth();
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
   const [loading, setLoading] = useState(true);
-  const { user, isLoading } = useAuth();
-  const router = useRouter();
 
   useEffect(() => {
-    if (!isLoading && !user) {
-      router.push('/login');
-    }
-  }, [user, isLoading, router]);
-
-  useEffect(() => {
-    const fetchBookmarks = async () => {
+    async function fetchBookmarks() {
+      if (!user) return;
+      
       try {
-        // Your fetch bookmarks logic here
-        setBookmarks([]); // Replace with actual bookmarks data
+        const { data, error } = await supabase
+          .from('bookmarks')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false });
+        
+        if (error) {
+          console.error('Error fetching bookmarks:', error);
+        } else {
+          setBookmarks(data || []);
+        }
       } catch (error) {
         console.error('Error fetching bookmarks:', error);
       } finally {
         setLoading(false);
       }
-    };
-
-    if (user) {
-      fetchBookmarks();
     }
+
+    fetchBookmarks();
   }, [user]);
 
-  if (isLoading || loading) {
+  if (loading) {
     return (
       <div className="min-h-screen bg-gray-900 text-white flex items-center justify-center">
         <div className="text-center">
@@ -55,13 +57,19 @@ export default function BookmarksPage() {
   }
 
   if (!user) {
-    return null;
+    return (
+      <div className="min-h-screen bg-gray-900 text-white flex items-center justify-center">
+        <div className="text-center">
+          <p>Please log in to view your bookmarks.</p>
+        </div>
+      </div>
+    );
   }
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <h1 className="text-3xl font-bold text-white mb-8">Your Bookmarks</h1>
-      
+
       {bookmarks.length === 0 ? (
         <div className="text-center py-12">
           <p className="text-gray-400">No bookmarks yet</p>
@@ -97,10 +105,10 @@ export default function BookmarksPage() {
                 <div className="mt-auto">
                   <BookmarkButton
                     article={{
-                      link: bookmark.article_url,
+                      url: bookmark.article_url,
                       title: bookmark.article_title,
                       source: bookmark.article_source,
-                      category: bookmark.article_category,
+                      category: bookmark.article_category
                     }}
                   />
                 </div>

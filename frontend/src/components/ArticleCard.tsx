@@ -6,7 +6,7 @@ import { useAuth } from '@/context/AuthContext';
 interface ArticleCardProps {
   article: {
     title: string;
-    link: string;
+    url: string;
     source: string;
     category: string;
     summary?: string;
@@ -20,10 +20,10 @@ export default function ArticleCard({ article }: ArticleCardProps) {
   const { user } = useAuth();
 
   const handleArticleClick = () => {
-    if (article?.link) {
-      window.open(article.link, '_blank', 'noopener,noreferrer');
+    if (article?.url) {
+      window.open(article.url, '_blank', 'noopener,noreferrer');
     } else {
-      console.error('No link available for article:', article);
+      console.error('No URL available for article:', article);
     }
   };
 

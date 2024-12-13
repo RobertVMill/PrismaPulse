@@ -115,7 +115,7 @@ def get_news():
                 
                 articles.append({
                     'title': article.get('title', 'Untitled Article'),
-                    'link': article.get('url', '#'),
+                    'url': article.get('url', '#'),
                     'published': article.get('publishedAt', ''),
                     'summary': article.get('description') or 'No description available',
                     'full_content': article.get('content') or article.get('description') or 'No content available',
@@ -130,7 +130,7 @@ def get_news():
             logger.warning("No articles were successfully processed")
             return jsonify([{
                 'title': 'No articles available',
-                'link': '#',
+                'url': '#',
                 'published': '',
                 'summary': 'Unable to fetch articles at this time. Please try again later.',
                 'full_content': '',
