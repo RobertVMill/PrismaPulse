@@ -43,11 +43,7 @@ app = Flask(__name__)
 CORS(app, 
      resources={
          r"/*": {
-             "origins": [
-                 "http://localhost:3000",
-                 "https://prisma-pulse.vercel.app",
-                 "https://signal7.vercel.app"
-             ],
+             "origins": "*",  # Allow all origins in development
              "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
              "allow_headers": ["Content-Type", "Authorization"],
              "expose_headers": ["Content-Type", "Authorization"],
@@ -58,9 +54,21 @@ CORS(app,
 
 @app.after_request
 def after_request(response):
-    response.headers.add('Access-Control-Allow-Origin', '*')
-    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
-    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+    # Handle preflight requests
+    if request.method == 'OPTIONS':
+        response = make_response()
+        response.headers.add('Access-Control-Allow-Credentials', 'true')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+        response.headers.add('Access-Control-Allow-Methods', 'GET, PUT, POST, DELETE, OPTIONS')
+        response.headers.add('Access-Control-Max-Age', '600')
+    
+    # Allow requests from any origin
+    origin = request.headers.get('Origin')
+    if origin:
+        response.headers.add('Access-Control-Allow-Origin', origin)
+    else:
+        response.headers.add('Access-Control-Allow-Origin', '*')
+    
     return response
 
 # Enable debug mode and auto-reloading
