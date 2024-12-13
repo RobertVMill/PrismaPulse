@@ -26,7 +26,15 @@ if not NEWS_API_KEY:
     raise ValueError("Missing News API key. Please set NEWS_API_KEY in .env file")
 
 # Initialize OpenAI client
-client = OpenAI(api_key=OPENAI_API_KEY)
+try:
+    client = OpenAI(
+        api_key=OPENAI_API_KEY,
+        base_url="https://api.openai.com/v1"  # Explicitly set the base URL
+    )
+    logger.info("OpenAI client initialized successfully")
+except Exception as e:
+    logger.error(f"Error initializing OpenAI client: {str(e)}")
+    client = None
 
 # Initialize Flask
 app = Flask(__name__)
@@ -174,6 +182,9 @@ def get_news():
 @app.route('/api/generate-article', methods=['POST'])
 def generate_article():
     try:
+        if client is None:
+            return jsonify({"error": "OpenAI client not initialized"}), 500
+
         data = request.json
         logger.info(f"Received request with data: {data}")
         
