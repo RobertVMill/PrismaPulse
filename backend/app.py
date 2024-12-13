@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, make_response
 from flask_cors import CORS
 import os
 from dotenv import load_dotenv
@@ -9,7 +9,10 @@ from datetime import datetime, timedelta
 from models import BigTechUpdate
 
 # Set up logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 # Load environment variables
@@ -29,7 +32,7 @@ client = OpenAI(api_key=OPENAI_API_KEY)
 # Initialize Flask
 app = Flask(__name__)
 
-# Configure CORS with credentials support
+# Configure CORS
 CORS(app, 
      resources={
          r"/*": {
@@ -40,15 +43,32 @@ CORS(app,
              ],
              "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
              "allow_headers": ["Content-Type", "Authorization"],
-             "supports_credentials": True
+             "expose_headers": ["Content-Type", "Authorization"],
+             "supports_credentials": True,
+             "max_age": 600
          }
      })
+
+@app.after_request
+def after_request(response):
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+    return response
 
 # Enable debug mode and auto-reloading
 app.debug = True
 
+@app.route('/')
+def home():
+    return jsonify({
+        "status": "ok",
+        "message": "Signal7 API is running"
+    })
+
 @app.route('/api/test', methods=['GET'])
 def test_endpoint():
+    logger.info("Test endpoint called")
     return jsonify({
         "message": "API connection successful!",
         "status": "ok"
@@ -56,18 +76,17 @@ def test_endpoint():
 
 @app.route('/api/news')
 def get_news():
+    logger.info("News endpoint called")
     try:
-        logger.info("Fetching news from NewsAPI...")
-        
-        # Get news from NewsAPI - using v2/everything for more comprehensive results
+        # Get news from NewsAPI
         url = 'https://newsapi.org/v2/everything'
         params = {
             'apiKey': NEWS_API_KEY,
-            'q': 'technology OR artificial intelligence OR startup OR programming',  # Search terms
+            'q': 'technology OR artificial intelligence OR startup OR programming',
             'language': 'en',
             'sortBy': 'publishedAt',
             'pageSize': 20,
-            'domains': 'techcrunch.com,theverge.com,wired.com,arstechnica.com'  # Reliable tech sources
+            'domains': 'techcrunch.com,theverge.com,wired.com,arstechnica.com'
         }
         
         logger.info(f"Making request to NewsAPI with params: {params}")
@@ -81,7 +100,7 @@ def get_news():
                 error_message = "Invalid News API key. Please check your API key configuration."
             elif response.status_code == 429:
                 error_message = "Too many requests to News API. Please try again later."
-            return jsonify({"error": error_message}), 500
+            return jsonify({"error": error_message}), response.status_code
             
         data = response.json()
         logger.info(f"Received {len(data.get('articles', []))} articles from NewsAPI")
@@ -91,7 +110,6 @@ def get_news():
             logger.error(f"NewsAPI returned error: {error_message}")
             return jsonify({"error": error_message}), 500
         
-        # Transform the articles to match our expected format
         articles = []
         for article in data.get('articles', []):
             try:
@@ -109,13 +127,13 @@ def get_news():
                 if any(word in content for word in ['ai', 'machine learning', 'artificial intelligence', 'gpt', 'openai']):
                     category = 'AI & Machine Learning'
                 elif any(word in content for word in ['startup', 'funding', 'business', 'venture', 'acquisition']):
-                    category = 'Startups & Business'
+                    category = 'Startups'
                 elif any(word in content for word in ['security', 'hack', 'breach', 'cyber', 'privacy']):
                     category = 'Cybersecurity'
-                elif any(word in content for word in ['app', 'ios', 'android', 'mobile']):
-                    category = 'Mobile & Apps'
-                elif any(word in content for word in ['cloud', 'web', 'api', 'aws', 'azure']):
-                    category = 'Web & Cloud'
+                elif any(word in content for word in ['hardware', 'device', 'chip', 'processor']):
+                    category = 'Hardware'
+                elif any(word in content for word in ['software', 'programming', 'developer', 'code']):
+                    category = 'Software Development'
                 
                 articles.append({
                     'title': article.get('title', 'Untitled Article'),
@@ -194,4 +212,5 @@ def get_big_tech_matrix():
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(port=8000, debug=True)
+    port = int(os.environ.get('PORT', 8000))
+    app.run(host='0.0.0.0', port=port)
