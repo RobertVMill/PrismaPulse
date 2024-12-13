@@ -6,7 +6,6 @@ from openai import OpenAI
 import logging
 import requests
 from datetime import datetime, timedelta
-from models import BigTechUpdate
 
 # Set up logging
 logging.basicConfig(
@@ -200,15 +199,6 @@ def generate_article():
 
     except Exception as e:
         logger.error(f"Error in generate_article: {str(e)}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
-
-@app.route('/api/big-tech-matrix', methods=['GET'])
-def get_big_tech_matrix():
-    try:
-        matrix = BigTechUpdate.get_company_matrix()
-        return jsonify(matrix)
-    except Exception as e:
-        logger.error(f"Error fetching big tech matrix: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
